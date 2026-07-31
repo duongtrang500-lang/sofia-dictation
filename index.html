@@ -75,7 +75,74 @@ textarea:focus{outline:3px solid #007aff22;border-color:var(--blue)}
   .controls .wide{grid-column:1/-1}
   textarea{min-height:145px;font-size:19px}
 }
+
+.compareWrap{display:none;margin-top:10px}
+.compareLabel{font-size:13px;color:var(--muted);font-weight:700;margin:10px 0 5px}
+.compareLine{font-size:20px;line-height:1.8;background:#fafafa;border-radius:12px;padding:10px 12px;word-break:break-word}
+.tok{display:inline-block;padding:0 3px;margin:1px;border-radius:4px}
+.tok.ok{background:#9bf3b0}
+.tok.bad{background:#ffaaaa}
+.tok.missing{background:#ffaaaa;text-decoration:underline}
+.tok.extra{background:#ffd0d0;text-decoration:line-through}
+.arrowCompare{text-align:center;font-size:24px;font-weight:800;margin:3px 0}
+
+
+/* Anki-style typed-answer feedback */
+.compareWrap{
+  display:none;
+  margin:14px 0 4px;
+  padding:14px;
+  border-top:1px solid #d7d7d7;
+  border-bottom:1px solid #d7d7d7;
+}
+.compareLabel{display:none}
+.compareLine{
+  background:transparent;
+  border-radius:0;
+  padding:5px 2px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-size:21px;
+  line-height:1.65;
+  text-align:center;
+}
+.arrowCompare{
+  font-size:0;
+  height:1px;
+  background:#d7d7d7;
+  margin:8px 0;
+}
+.tok{
+  display:inline;
+  padding:1px 2px;
+  margin:0;
+  border-radius:3px;
+}
+.tok.ok{
+  background:transparent;
+  color:inherit;
+}
+.tok.bad,.tok.missing{
+  background:#ffd9d9;
+  color:#b42318;
+  font-weight:700;
+  text-decoration:none;
+}
+.tok.extra{
+  background:#ffd9d9;
+  color:#b42318;
+  font-weight:700;
+  text-decoration:line-through;
+}
+.ankiHint{
+  display:none;
+  text-align:center;
+  color:var(--muted);
+  font-size:13px;
+  margin-top:5px;
+}
+
 </style>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
 <main>
@@ -137,6 +204,14 @@ textarea:focus{outline:3px solid #007aff22;border-color:var(--blue)}
     <button id="clearText">Xóa phần nhập</button>
   </div>
 
+  <div id="compareWrap" class="compareWrap">
+    <div class="compareLabel">Bạn đã viết</div>
+    <div id="userCompare" class="compareLine"></div>
+    <div class="arrowCompare">↓</div>
+    <div class="compareLabel">Đáp án</div>
+    <div id="correctCompare" class="compareLine"></div>
+    <div id="ankiHint" class="ankiHint">trên: câu bạn nhập · dưới: đáp án</div>
+  </div>
   <div id="answer" class="answer"></div>
 
   <div class="progressBox">
@@ -149,11 +224,12 @@ textarea:focus{outline:3px solid #007aff22;border-color:var(--blue)}
   </div>
 
   <div class="footerActions">
-    <button id="exportHard">⬇ Xuất câu khó cho Anki</button>
+    <button id="exportHard">🎧 Xuất Anki + audio</button>
     <button id="resetProgress">↺ Xóa tiến độ</button>
   </div>
 
-  <p class="muted" style="margin-top:14px">
+  <div id="exportStatus" class="muted" style="margin-top:10px"></div>
+<p class="muted" style="margin-top:14px">
     Tiến độ được lưu trên chính trình duyệt này. Máy tính: Space nghe/tạm dừng · R nghe lại · ←/→ đổi câu · Enter kiểm tra.
   </p>
 </main>
@@ -166,6 +242,9 @@ const media=document.getElementById('media');
 const typed=document.getElementById('typed');
 const answer=document.getElementById('answer');
 const result=document.getElementById('result');
+const compareWrap=document.getElementById('compareWrap');
+const userCompare=document.getElementById('userCompare');
+const correctCompare=document.getElementById('correctCompare');
 const state=document.getElementById('state');
 const counter=document.getElementById('counter');
 const speed=document.getElementById('speed');
@@ -218,28 +297,67 @@ fetch('subs.json')
 function offset(){return parseFloat(offsetEl.value)||0}
 function stopMonitor(){if(stopTimer){clearInterval(stopTimer);stopTimer=null}}
 function esc(s){return String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
-function norm(s){
-  return String(s).toLowerCase()
-    .replace(/[“”"‘’'.,!?;:—–\-]/g,'')
-    .replace(/\s+/g,' ').trim()
+function cleanWord(s){
+  return String(s)
+    .toLocaleLowerCase('en-US')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]/g,'');
 }
-function levenshtein(a,b){
-  const m=a.length,n=b.length,dp=Array(n+1).fill(0);
-  for(let j=0;j<=n;j++)dp[j]=j;
-  for(let i=1;i<=m;i++){
-    let prev=dp[0]; dp[0]=i;
-    for(let j=1;j<=n;j++){
-      const tmp=dp[j];
-      dp[j]=Math.min(dp[j]+1,dp[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));
-      prev=tmp;
+function words(s){
+  return String(s).trim().split(/\s+/).map(x=>({raw:x,key:cleanWord(x)})).filter(x=>x.key);
+}
+function alignWords(userText,correctText){
+  const A=words(userText),B=words(correctText),m=A.length,n=B.length;
+  const dp=Array.from({length:m+1},()=>Array(n+1).fill(0));
+  const op=Array.from({length:m+1},()=>Array(n+1).fill(''));
+  for(let i=1;i<=m;i++){dp[i][0]=i;op[i][0]='del'}
+  for(let j=1;j<=n;j++){dp[0][j]=j;op[0][j]='ins'}
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++){
+    if(A[i-1].key===B[j-1].key){dp[i][j]=dp[i-1][j-1];op[i][j]='ok'}
+    else{
+      const sub=dp[i-1][j-1]+1, del=dp[i-1][j]+1, ins=dp[i][j-1]+1;
+      const best=Math.min(sub,del,ins);dp[i][j]=best;
+      op[i][j]=best===sub?'sub':best===del?'del':'ins';
     }
   }
-  return dp[n];
+  let i=m,j=n,pairs=[];
+  while(i>0||j>0){
+    const o=op[i][j];
+    if(o==='ok'||o==='sub'){pairs.push({type:o,u:A[i-1],c:B[j-1]});i--;j--}
+    else if(o==='del'){pairs.push({type:'del',u:A[i-1],c:null});i--}
+    else{pairs.push({type:'ins',u:null,c:B[j-1]});j--}
+  }
+  pairs.reverse();
+  const correctCount=pairs.filter(p=>p.type==='ok').length;
+  return {pairs,score:n?Math.round(correctCount/n*100):(m?0:100),correctCount,total:n};
 }
-function scoreText(a,b){
-  a=norm(a);b=norm(b);
-  if(!b)return 0;
-  return Math.max(0,Math.round((1-levenshtein(a,b)/Math.max(a.length,b.length,1))*100));
+function tokenHtml(raw,cls,title=''){
+  return '<span class="tok '+cls+'"'+(title?' title="'+esc(title)+'"':'')+'>'+esc(raw)+'</span> ';
+}
+function showComparison(userText,correctText){
+  const a=alignWords(userText,correctText);
+  let uh='',ch='';
+  for(const p of a.pairs){
+    if(p.type==='ok'){
+      uh+=tokenHtml(p.u.raw,'ok');
+      ch+=tokenHtml(p.c.raw,'ok');
+    }else if(p.type==='sub'){
+      uh+=tokenHtml(p.u.raw,'bad','Từ sai');
+      ch+=tokenHtml(p.c.raw,'bad','Từ đúng');
+    }else if(p.type==='del'){
+      uh+=tokenHtml(p.u.raw,'extra','Từ thừa');
+      ch+=tokenHtml('∅','extra','Không có từ này trong đáp án');
+    }else if(p.type==='ins'){
+      uh+=tokenHtml('___','missing','Bạn thiếu từ này');
+      ch+=tokenHtml(p.c.raw,'missing','Từ bị thiếu');
+    }
+  }
+  userCompare.innerHTML=uh||'<span class="muted">(trống)</span>';
+  correctCompare.innerHTML=ch||'<span class="muted">(trống)</span>';
+  compareWrap.style.display='block';
+  document.getElementById('ankiHint').style.display='block';
+  return a;
 }
 function isHard(){return data.hard.includes(index)}
 function render(){
@@ -247,6 +365,8 @@ function render(){
   counter.textContent=`${index+1} / ${subs.length}`;
   answer.style.display='none';
   result.textContent='';
+  compareWrap.style.display='none';
+  userCompare.innerHTML='';correctCompare.innerHTML='';
   typed.value='';
   hardBtn.classList.toggle('active',isHard());
   hardBtn.textContent=isHard()?'★ Đã đánh dấu câu khó':'⭐ Đánh dấu câu khó';
@@ -298,13 +418,15 @@ function check(){
   const user=typed.value.trim();
   if(!user){result.className='result bad';result.textContent='Bạn chưa nhập câu.';return}
   const expected=subs[index].text;
-  const score=scoreText(user,expected);
+  const a=showComparison(user,expected);
   data.attempts[index]=(data.attempts[index]||0)+1;
-  if(score===100)data.correct[index]=true;
-  result.className='result '+(score>=90?'good':'bad');
-  result.textContent=score===100?'✅ Chính xác 100%':`Độ khớp: ${score}%`;
-  answer.innerHTML='<b>Đáp án:</b><br>'+esc(expected);
-  answer.style.display='block';
+  if(a.score===100)data.correct[index]=true;
+  else delete data.correct[index];
+  result.className='result '+(a.score===100?'good':'bad');
+  result.textContent=a.score===100
+    ? '✓ Đúng'
+    : `${a.correctCount}/${a.total} từ đúng · ${a.score}%`;
+  answer.style.display='none';
   saveLocal();
   renderStatsOnly();
 }
@@ -325,27 +447,110 @@ function toggleHard(){
   renderStatsOnly();saveLocal();
 }
 function csvCell(x){return '"'+String(x??'').replace(/"/g,'""')+'"'}
-function exportHard(){
-  if(!data.hard.length){alert('Chưa có câu khó nào được đánh dấu.');return}
-  const rows=[['Front','Back','Start','End','Sentence']];
-  for(const idx of data.hard){
-    const s=subs[idx];
-    rows.push([
-      s.text,
-      'Sofia S1E1 · câu '+(idx+1),
-      s.start.toFixed(3),
-      s.end.toFixed(3),
-      s.text
-    ]);
+function wavBlobFromBuffer(buffer){
+  const channels=Math.min(2,buffer.numberOfChannels);
+  const sampleRate=buffer.sampleRate;
+  const frames=buffer.length;
+  const bytesPerSample=2;
+  const blockAlign=channels*bytesPerSample;
+  const dataSize=frames*blockAlign;
+  const ab=new ArrayBuffer(44+dataSize);
+  const v=new DataView(ab);
+  function str(o,s){for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))}
+  str(0,'RIFF');v.setUint32(4,36+dataSize,true);str(8,'WAVE');
+  str(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);
+  v.setUint16(22,channels,true);v.setUint32(24,sampleRate,true);
+  v.setUint32(28,sampleRate*blockAlign,true);v.setUint16(32,blockAlign,true);
+  v.setUint16(34,16,true);str(36,'data');v.setUint32(40,dataSize,true);
+  let p=44;
+  for(let i=0;i<frames;i++){
+    for(let c=0;c<channels;c++){
+      let x=Math.max(-1,Math.min(1,buffer.getChannelData(c)[i]));
+      v.setInt16(p,x<0?x*32768:x*32767,true);p+=2;
+    }
   }
-  const csv='\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download='Sofia_Anki_cau_kho.csv';a.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  return new Blob([ab],{type:'audio/wav'});
 }
+function sliceAudioBuffer(ctx,src,startSec,endSec){
+  const start=Math.max(0,Math.floor(startSec*src.sampleRate));
+  const end=Math.min(src.length,Math.ceil(endSec*src.sampleRate));
+  const len=Math.max(1,end-start);
+  const dst=ctx.createBuffer(Math.min(2,src.numberOfChannels),len,src.sampleRate);
+  for(let c=0;c<dst.numberOfChannels;c++){
+    dst.copyToChannel(src.getChannelData(c).subarray(start,end),c);
+  }
+  return dst;
+}
+async function exportHard(){
+  if(!data.hard.length){alert('Chưa có câu khó nào được đánh dấu.');return}
+  if(typeof JSZip==='undefined'){
+    alert('Không tải được thư viện tạo ZIP. Hãy kiểm tra Internet rồi thử lại.');
+    return;
+  }
+  const status=document.getElementById('exportStatus');
+  const btn=document.getElementById('exportHard');
+  btn.disabled=true;
+  try{
+    status.textContent='Đang lấy audio từ video…';
+    const resp=await fetch('sofia.mp4');
+    if(!resp.ok)throw new Error('Không tải được sofia.mp4');
+    const arr=await resp.arrayBuffer();
+    const AC=window.AudioContext||window.webkitAudioContext;
+    const ctx=new AC();
+    const decoded=await ctx.decodeAudioData(arr.slice(0));
 
+    const zip=new JSZip();
+    const rows=[['Audio','English','Episode','Sentence_No','Start','End']];
+    let k=0;
+    for(const idx of data.hard){
+      k++;
+      const s=subs[idx];
+      status.textContent=`Đang tạo audio ${k}/${data.hard.length}…`;
+      const filename='sofia_s1e1_'+String(idx+1).padStart(3,'0')+'.wav';
+      const clip=sliceAudioBuffer(ctx,decoded,Math.max(0,s.start+offset()-0.15),s.end+offset()+0.15);
+      zip.file(filename,wavBlobFromBuffer(clip));
+      rows.push([
+        '[sound:'+filename+']',
+        s.text,
+        'Sofia S1E1',
+        String(idx+1),
+        s.start.toFixed(3),
+        s.end.toFixed(3)
+      ]);
+      await new Promise(r=>setTimeout(r,0));
+    }
+    const csv='\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\n');
+    zip.file('Sofia_Anki.csv',csv);
+    zip.file('HUONG_DAN.txt',
+`SOFIA DICTATION → ANKI
+
+1. Giải nén file ZIP này.
+2. Chép toàn bộ file .wav vào thư mục collection.media của Anki.
+3. Trong Anki: File > Import > chọn Sofia_Anki.csv.
+4. Map:
+   Audio   -> field Audio
+   English -> field English
+   Episode -> field Episode
+5. Tạo card:
+   Front: {{Audio}}
+   Back:  {{FrontSide}}<hr>{{English}}
+
+Tên audio trong CSV dùng cú pháp [sound:...], nên Anki sẽ phát đúng audio sau khi media đã được chép vào collection.media.
+`);
+    status.textContent='Đang đóng gói ZIP…';
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:5}});
+    const u=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=u;a.download='Sofia_Anki_Audio.zip';a.click();
+    setTimeout(()=>URL.revokeObjectURL(u),1500);
+    status.textContent=`✓ Đã xuất ${data.hard.length} câu khó kèm audio.`;
+    await ctx.close();
+  }catch(e){
+    console.error(e);
+    status.textContent='Không xuất được audio trên trình duyệt này: '+e.message;
+  }finally{
+    btn.disabled=false;
+  }
+}
 document.getElementById('listen').onclick=()=>playCurrent();
 document.getElementById('again').onclick=()=>playCurrent();
 document.getElementById('prev').onclick=()=>move(-1);
@@ -353,11 +558,12 @@ document.getElementById('next').onclick=()=>move(1);
 document.getElementById('check').onclick=check;
 document.getElementById('show').onclick=()=>{
   if(!subs.length)return;
+  compareWrap.style.display='none';
   answer.innerHTML='<b>Đáp án:</b><br>'+esc(subs[index].text);
   answer.style.display='block';
 };
 document.getElementById('hard').onclick=toggleHard;
-document.getElementById('clearText').onclick=()=>{typed.value='';typed.focus();result.textContent=''};
+document.getElementById('clearText').onclick=()=>{typed.value='';typed.focus();result.textContent='';compareWrap.style.display='none'};
 document.getElementById('exportHard').onclick=exportHard;
 document.getElementById('resetProgress').onclick=()=>{
   if(confirm('Xóa toàn bộ tiến độ, câu đúng và câu khó đã lưu trên trình duyệt này?')){
