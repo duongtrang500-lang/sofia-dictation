@@ -1,35 +1,389 @@
 <!doctype html>
-<html lang="vi"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Sofia Dictation</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1d1d1f;padding:12px}
-main{max-width:800px;margin:auto;background:#fff;padding:17px;border-radius:20px}h1{margin:0 0 5px;font-size:27px}.muted{color:#6e6e73;font-size:14px}
-.status{background:#f2f2f7;padding:11px;border-radius:12px;margin:12px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0}
-button{border:0;border-radius:13px;min-height:55px;font-size:17px;font-weight:650;background:#f2f2f7}.primary{background:#007aff;color:#fff}
-textarea{width:100%;min-height:155px;border:1px solid #d2d2d7;border-radius:14px;padding:14px;font-size:20px;line-height:1.45}
-.answer{display:none;background:#f2f2f7;border-radius:14px;padding:14px;font-size:19px;line-height:1.45;margin-top:10px}
-video{width:100%;max-height:430px;background:#000;border-radius:14px;margin:8px 0}
-.row{display:flex;align-items:center;gap:8px}.row input{width:70px;padding:7px;font-size:16px}
-</style></head><body><main>
-<h1>🎬 Sofia Dictation</h1><div class="muted">S1E1 · Just One of the Princes · MP4 + 336 câu phụ đề</div>
-<div class="status">Câu <b id="n">1 / …</b> · <span id="state">Đang tải…</span></div>
-<video id="media" src="sofia.mp4" controls preload="metadata" playsinline></video>
-<div class="grid"><button class="primary" id="listen">▶ Nghe câu</button><button id="again">🔁 Nghe lại</button><button id="prev">← Câu trước</button><button id="next">Câu tiếp →</button></div>
-<div class="row muted">Offset <input id="off" type="number" value="0" step=".1"> giây</div>
-<p><b>Type what you hear:</b></p><textarea id="typed" spellcheck="false" autocapitalize="off"></textarea>
-<div class="grid"><button class="primary" id="check">✓ Kiểm tra</button><button id="show">👁 Đáp án</button></div>
-<div id="answer" class="answer"></div>
+:root{
+  --bg:#f5f5f7; --card:#fff; --soft:#f2f2f7; --line:#d2d2d7;
+  --text:#1d1d1f; --muted:#6e6e73; --blue:#007aff; --green:#16853d;
+  --red:#c62828; --yellow:#fff5cc;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  padding:12px;
+}
+main{max-width:820px;margin:auto;background:var(--card);padding:17px;border-radius:20px}
+h1{margin:0 0 4px;font-size:28px}
+.muted{color:var(--muted);font-size:14px;line-height:1.4}
+.status{
+  display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;
+  background:var(--soft);padding:11px 12px;border-radius:12px;margin:12px 0
+}
+video{width:100%;max-height:430px;background:#000;border-radius:14px;margin:7px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0}
+button,select,input{
+  font:inherit
+}
+button{
+  border:0;border-radius:13px;min-height:52px;padding:10px 12px;
+  font-size:16px;font-weight:650;background:var(--soft);cursor:pointer
+}
+button:active{transform:scale(.985)}
+.primary{background:var(--blue);color:#fff}
+.hard.active{background:#ffcc00;color:#111}
+.controls{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+  background:#fafafa;border:1px solid #eee;border-radius:14px;padding:10px;margin:10px 0
+}
+.controls label{font-size:13px;color:var(--muted)}
+.controls select,.controls input{
+  width:100%;margin-top:5px;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff
+}
+.toggle{display:flex;align-items:center;gap:7px;margin-top:8px}
+.toggle input{width:auto}
+textarea{
+  width:100%;min-height:155px;border:1px solid var(--line);border-radius:14px;
+  padding:14px;font-size:20px;line-height:1.45;resize:vertical
+}
+textarea:focus{outline:3px solid #007aff22;border-color:var(--blue)}
+.answer{
+  display:none;background:var(--soft);border-radius:14px;padding:14px;
+  font-size:19px;line-height:1.5;margin-top:10px
+}
+.result{min-height:22px;font-weight:700;margin:8px 2px}
+.good{color:var(--green)} .bad{color:var(--red)}
+.progressBox{margin:12px 0}
+.bar{height:9px;background:#e5e5ea;border-radius:99px;overflow:hidden}
+.bar>div{height:100%;background:var(--blue);width:0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.stat{background:var(--soft);padding:9px;border-radius:10px;text-align:center;font-size:13px}
+.stat b{display:block;font-size:18px}
+.footerActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+@media(max-width:620px){
+  body{padding:7px}
+  main{padding:13px;border-radius:16px}
+  h1{font-size:25px}
+  video{max-height:38vh}
+  .controls{grid-template-columns:1fr 1fr}
+  .controls .wide{grid-column:1/-1}
+  textarea{min-height:145px;font-size:19px}
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>🎬 Sofia Dictation</h1>
+  <div class="muted">S1E1 · Just One of the Princes</div>
+
+  <div class="status">
+    <span>Câu <b id="counter">1 / …</b></span>
+    <span id="state">Đang tải…</span>
+  </div>
+
+  <video id="media" src="sofia.mp4" controls preload="metadata" playsinline></video>
+
+  <div class="controls">
+    <label>Tốc độ
+      <select id="speed">
+        <option value="0.75">0.75×</option>
+        <option value="0.85">0.85×</option>
+        <option value="0.9">0.90×</option>
+        <option value="1" selected>1.00×</option>
+        <option value="1.1">1.10×</option>
+        <option value="1.25">1.25×</option>
+      </select>
+    </label>
+    <label>Offset (giây)
+      <input id="offset" type="number" value="0" step="0.1">
+    </label>
+    <label>Số lần lặp
+      <select id="repeatCount">
+        <option value="1">1 lần</option>
+        <option value="2">2 lần</option>
+        <option value="3">3 lần</option>
+        <option value="5">5 lần</option>
+      </select>
+    </label>
+    <label class="toggle wide">
+      <input id="autoRepeat" type="checkbox">
+      Tự phát lại theo số lần lặp
+    </label>
+  </div>
+
+  <div class="grid">
+    <button class="primary" id="listen">▶ Nghe câu</button>
+    <button id="again">🔁 Nghe lại</button>
+    <button id="prev">← Câu trước</button>
+    <button id="next">Câu tiếp →</button>
+  </div>
+
+  <p><b>Type what you hear:</b></p>
+  <textarea id="typed" spellcheck="false" autocapitalize="off" autocomplete="off"
+    placeholder="Gõ câu bạn nghe được..."></textarea>
+
+  <div id="result" class="result"></div>
+
+  <div class="grid">
+    <button class="primary" id="check">✓ Kiểm tra</button>
+    <button id="show">👁 Đáp án</button>
+    <button class="hard" id="hard">⭐ Đánh dấu câu khó</button>
+    <button id="clearText">Xóa phần nhập</button>
+  </div>
+
+  <div id="answer" class="answer"></div>
+
+  <div class="progressBox">
+    <div class="bar"><div id="progressBar"></div></div>
+    <div class="stats">
+      <div class="stat"><b id="doneStat">0</b>đã học</div>
+      <div class="stat"><b id="correctStat">0</b>đúng</div>
+      <div class="stat"><b id="hardStat">0</b>câu khó</div>
+    </div>
+  </div>
+
+  <div class="footerActions">
+    <button id="exportHard">⬇ Xuất câu khó cho Anki</button>
+    <button id="resetProgress">↺ Xóa tiến độ</button>
+  </div>
+
+  <p class="muted" style="margin-top:14px">
+    Tiến độ được lưu trên chính trình duyệt này. Máy tính: Space nghe/tạm dừng · R nghe lại · ←/→ đổi câu · Enter kiểm tra.
+  </p>
+</main>
+
 <script>
-let subs=[],i=0,timer=null;const a=document.getElementById('media'),typed=document.getElementById('typed'),ans=document.getElementById('answer'),state=document.getElementById('state'),num=document.getElementById('n');
-fetch('subs.json').then(r=>r.json()).then(x=>{subs=x;update();state.textContent='Sẵn sàng'}).catch(()=>state.textContent='Không tải được phụ đề');
-const off=()=>parseFloat(document.getElementById('off').value)||0;
-function update(){num.textContent=`${i+1} / ${subs.length}`;typed.value='';ans.style.display='none'}
-function stop(){if(timer){clearInterval(timer);timer=null}}
-function play(){if(!subs.length)return;stop();let s=subs[i];a.currentTime=Math.max(0,s.start+off());a.play().catch(()=>state.textContent='Chạm Play trên video một lần rồi thử lại');state.textContent='Đang phát…';timer=setInterval(()=>{if(a.currentTime>=s.end+off()){a.pause();stop();state.textContent='Đã dừng cuối câu';typed.focus()}},40)}
-function esc(s){return s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
-function norm(s){return s.toLowerCase().replace(/[“”"‘’'.,!?;:—–\-]/g,'').replace(/\s+/g,' ').trim()}
-listen.onclick=play;again.onclick=play;prev.onclick=()=>{if(i){i--;update();play()}};next.onclick=()=>{if(i<subs.length-1){i++;update();play()}};
-show.onclick=()=>{ans.innerHTML='<b>Đáp án:</b><br>'+esc(subs[i].text);ans.style.display='block'};
-check.onclick=()=>{let ok=norm(typed.value)===norm(subs[i].text);ans.innerHTML=(ok?'✅ <b>Đúng!</b><br>':'📝 <b>Đáp án:</b><br>')+esc(subs[i].text);ans.style.display='block'};
-</script></main></body></html>
+const STORAGE_KEY='sofiaDictationV3';
+let subs=[], index=0, stopTimer=null, repeatPlayed=0;
+
+const media=document.getElementById('media');
+const typed=document.getElementById('typed');
+const answer=document.getElementById('answer');
+const result=document.getElementById('result');
+const state=document.getElementById('state');
+const counter=document.getElementById('counter');
+const speed=document.getElementById('speed');
+const offsetEl=document.getElementById('offset');
+const autoRepeat=document.getElementById('autoRepeat');
+const repeatCount=document.getElementById('repeatCount');
+const hardBtn=document.getElementById('hard');
+
+let data={
+  index:0,
+  speed:'1',
+  offset:0,
+  autoRepeat:false,
+  repeatCount:'1',
+  attempts:{},
+  correct:{},
+  hard:[]
+};
+
+function loadLocal(){
+  try{
+    const x=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
+    if(x && typeof x==='object') data={...data,...x};
+  }catch(e){}
+}
+function saveLocal(){
+  data.index=index;
+  data.speed=speed.value;
+  data.offset=parseFloat(offsetEl.value)||0;
+  data.autoRepeat=autoRepeat.checked;
+  data.repeatCount=repeatCount.value;
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+}
+loadLocal();
+
+fetch('subs.json')
+  .then(r=>{if(!r.ok) throw new Error('HTTP '+r.status); return r.json()})
+  .then(x=>{
+    subs=x;
+    index=Math.max(0,Math.min(Number(data.index)||0,subs.length-1));
+    speed.value=data.speed||'1';
+    offsetEl.value=Number(data.offset)||0;
+    autoRepeat.checked=!!data.autoRepeat;
+    repeatCount.value=data.repeatCount||'1';
+    render();
+    state.textContent='Sẵn sàng';
+  })
+  .catch(e=>state.textContent='Không tải được phụ đề');
+
+function offset(){return parseFloat(offsetEl.value)||0}
+function stopMonitor(){if(stopTimer){clearInterval(stopTimer);stopTimer=null}}
+function esc(s){return String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
+function norm(s){
+  return String(s).toLowerCase()
+    .replace(/[“”"‘’'.,!?;:—–\-]/g,'')
+    .replace(/\s+/g,' ').trim()
+}
+function levenshtein(a,b){
+  const m=a.length,n=b.length,dp=Array(n+1).fill(0);
+  for(let j=0;j<=n;j++)dp[j]=j;
+  for(let i=1;i<=m;i++){
+    let prev=dp[0]; dp[0]=i;
+    for(let j=1;j<=n;j++){
+      const tmp=dp[j];
+      dp[j]=Math.min(dp[j]+1,dp[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));
+      prev=tmp;
+    }
+  }
+  return dp[n];
+}
+function scoreText(a,b){
+  a=norm(a);b=norm(b);
+  if(!b)return 0;
+  return Math.max(0,Math.round((1-levenshtein(a,b)/Math.max(a.length,b.length,1))*100));
+}
+function isHard(){return data.hard.includes(index)}
+function render(){
+  if(!subs.length)return;
+  counter.textContent=`${index+1} / ${subs.length}`;
+  answer.style.display='none';
+  result.textContent='';
+  typed.value='';
+  hardBtn.classList.toggle('active',isHard());
+  hardBtn.textContent=isHard()?'★ Đã đánh dấu câu khó':'⭐ Đánh dấu câu khó';
+
+  const done=Object.keys(data.attempts).length;
+  const correct=Object.keys(data.correct).length;
+  document.getElementById('doneStat').textContent=done;
+  document.getElementById('correctStat').textContent=correct;
+  document.getElementById('hardStat').textContent=data.hard.length;
+  document.getElementById('progressBar').style.width=((done/subs.length)*100)+'%';
+  saveLocal();
+}
+function playCurrent(resetRepeats=true){
+  if(!subs.length)return;
+  stopMonitor();
+  if(resetRepeats) repeatPlayed=0;
+  const s=subs[index];
+  media.playbackRate=parseFloat(speed.value)||1;
+  media.currentTime=Math.max(0,s.start+offset());
+  media.play().then(()=>{
+    state.textContent='Đang phát…';
+  }).catch(()=>{
+    state.textContent='Chạm Play trên video một lần rồi thử lại';
+  });
+  const end=s.end+offset();
+  stopTimer=setInterval(()=>{
+    if(media.currentTime>=end){
+      media.pause(); stopMonitor();
+      repeatPlayed++;
+      const target=Math.max(1,parseInt(repeatCount.value)||1);
+      if(autoRepeat.checked && repeatPlayed<target){
+        state.textContent=`Lặp ${repeatPlayed+1}/${target}…`;
+        setTimeout(()=>playCurrent(false),450);
+      }else{
+        state.textContent='Đã dừng cuối câu';
+        typed.focus();
+      }
+    }
+  },40);
+}
+function move(d){
+  if(!subs.length)return;
+  index=Math.max(0,Math.min(subs.length-1,index+d));
+  render();
+  playCurrent();
+}
+function check(){
+  if(!subs.length)return;
+  const user=typed.value.trim();
+  if(!user){result.className='result bad';result.textContent='Bạn chưa nhập câu.';return}
+  const expected=subs[index].text;
+  const score=scoreText(user,expected);
+  data.attempts[index]=(data.attempts[index]||0)+1;
+  if(score===100)data.correct[index]=true;
+  result.className='result '+(score>=90?'good':'bad');
+  result.textContent=score===100?'✅ Chính xác 100%':`Độ khớp: ${score}%`;
+  answer.innerHTML='<b>Đáp án:</b><br>'+esc(expected);
+  answer.style.display='block';
+  saveLocal();
+  renderStatsOnly();
+}
+function renderStatsOnly(){
+  const done=Object.keys(data.attempts).length;
+  const correct=Object.keys(data.correct).length;
+  document.getElementById('doneStat').textContent=done;
+  document.getElementById('correctStat').textContent=correct;
+  document.getElementById('hardStat').textContent=data.hard.length;
+  if(subs.length)document.getElementById('progressBar').style.width=((done/subs.length)*100)+'%';
+}
+function toggleHard(){
+  const p=data.hard.indexOf(index);
+  if(p>=0)data.hard.splice(p,1); else data.hard.push(index);
+  data.hard.sort((a,b)=>a-b);
+  hardBtn.classList.toggle('active',isHard());
+  hardBtn.textContent=isHard()?'★ Đã đánh dấu câu khó':'⭐ Đánh dấu câu khó';
+  renderStatsOnly();saveLocal();
+}
+function csvCell(x){return '"'+String(x??'').replace(/"/g,'""')+'"'}
+function exportHard(){
+  if(!data.hard.length){alert('Chưa có câu khó nào được đánh dấu.');return}
+  const rows=[['Front','Back','Start','End','Sentence']];
+  for(const idx of data.hard){
+    const s=subs[idx];
+    rows.push([
+      s.text,
+      'Sofia S1E1 · câu '+(idx+1),
+      s.start.toFixed(3),
+      s.end.toFixed(3),
+      s.text
+    ]);
+  }
+  const csv='\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='Sofia_Anki_cau_kho.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+document.getElementById('listen').onclick=()=>playCurrent();
+document.getElementById('again').onclick=()=>playCurrent();
+document.getElementById('prev').onclick=()=>move(-1);
+document.getElementById('next').onclick=()=>move(1);
+document.getElementById('check').onclick=check;
+document.getElementById('show').onclick=()=>{
+  if(!subs.length)return;
+  answer.innerHTML='<b>Đáp án:</b><br>'+esc(subs[index].text);
+  answer.style.display='block';
+};
+document.getElementById('hard').onclick=toggleHard;
+document.getElementById('clearText').onclick=()=>{typed.value='';typed.focus();result.textContent=''};
+document.getElementById('exportHard').onclick=exportHard;
+document.getElementById('resetProgress').onclick=()=>{
+  if(confirm('Xóa toàn bộ tiến độ, câu đúng và câu khó đã lưu trên trình duyệt này?')){
+    localStorage.removeItem(STORAGE_KEY);
+    data={index:0,speed:'1',offset:0,autoRepeat:false,repeatCount:'1',attempts:{},correct:{},hard:[]};
+    index=0;speed.value='1';offsetEl.value=0;autoRepeat.checked=false;repeatCount.value='1';
+    render();state.textContent='Đã xóa tiến độ';
+  }
+};
+speed.onchange=()=>{media.playbackRate=parseFloat(speed.value)||1;saveLocal()};
+offsetEl.onchange=saveLocal;
+autoRepeat.onchange=saveLocal;
+repeatCount.onchange=saveLocal;
+
+document.addEventListener('keydown',e=>{
+  if(document.activeElement===typed){
+    if(e.key==='Enter' && !e.shiftKey){e.preventDefault();check()}
+    return;
+  }
+  if(e.code==='Space'){e.preventDefault();media.paused?playCurrent():media.pause()}
+  else if(e.key==='r'||e.key==='R')playCurrent();
+  else if(e.key==='ArrowLeft')move(-1);
+  else if(e.key==='ArrowRight')move(1);
+  else if(e.key==='Enter')check();
+});
+window.addEventListener('beforeunload',saveLocal);
+</script>
+</body>
+</html>
